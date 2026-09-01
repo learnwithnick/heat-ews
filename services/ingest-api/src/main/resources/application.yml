@@ -2,7 +2,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/heatews
     username: heat
-    password: heat_dev
+    password: ${DB_PASSWORD:heat_dev}
   jpa:
     hibernate:
       ddl-auto: validate
