@@ -6,6 +6,12 @@ import math
 from datetime import datetime
 
 
+STEFAN_BOLTZMANN = 5.67e-8   # W/m²K⁴
+GLOBE_EMISSIVITY = 0.95      # matte black paint
+GLOBE_ALBEDO = 0.05          # 1 - absorptivity
+GLOBE_DIAMETER_M = 0.15      # standard 150 mm globe
+
+
 def solar_zenith_angle(lat_deg: float, lon_deg: float, when_utc: datetime) -> float:
     """Solar zenith angle in radians. Values > pi/2 mean the sun is below the horizon."""
     n = when_utc.timetuple().tm_yday
@@ -37,4 +43,7 @@ def globe_temperature(
     zenith_rad: float,    # solar zenith angle, radians
 ) -> float:
     """Black globe temperature in °C (Liljegren et al., 2008)."""
-    ...
+    ta_k = t2m + 273.15
+    solar_total = max(0.0, dni * math.cos(zenith_rad) + diffuse)
+    wind = max(0.13 , wind10m)
+    
