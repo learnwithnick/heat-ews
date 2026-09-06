@@ -8,8 +8,12 @@ from datetime import datetime
 
 STEFAN_BOLTZMANN = 5.67e-8   # W/m²K⁴
 GLOBE_EMISSIVITY = 0.95      # matte black paint
-GLOBE_ALBEDO = 0.05          # 1 - absorptivity
 GLOBE_DIAMETER_M = 0.15      # standard 150 mm globe
+GROUND_ALBEDO = 0.15         # typical urban surface
+SURFACE_ROUGHNESS_M = 1.0    # dense urban terrain
+AIR_CONDUCTIVITY = 0.026     # W/m·K
+AIR_VISCOSITY = 1.5e-5       # m²/s, kinematic
+PRANDTL = 0.71               # dimensionless, air
 
 
 def solar_zenith_angle(lat_deg: float, lon_deg: float, when_utc: datetime) -> float:
@@ -44,6 +48,48 @@ def globe_temperature(
 ) -> float:
     """Black globe temperature in °C (Liljegren et al., 2008)."""
     ta_k = t2m + 273.15
+
+    # Global horizontal irradiance, floored at zero for night hours.
     solar_total = max(0.0, dni * math.cos(zenith_rad) + diffuse)
-    wind = max(0.13 , wind10m)
-    
+
+    # Wind at globe height (2 m) from the 10 m forecast value,
+    # log profile over dense urban roughness.
+    wind = max(0.13, wind10m)
+    wind_2m = wind * (
+        math.log(2.0 / SURFACE_ROUGHNESS_M)
+        / math.log(10.0 / SURFACE_ROUGHNESS_M)
+    )
+
+    # Convective heat transfer coefficient for a sphere in cross-flow.
+    reynolds = wind_2m * GLOBE_DIAMETER_M / AIR_VISCOSITY
+    nusselt = 2 + 0.6 * reynolds**0.5 * PRANDTL**0.33
+    h = nusselt * AIR_CONDUCTIVITY / GLOBE_DIAMETER_M
+
+    # Sky emissivity: crude clear-sky estimate. Overcast pushes this toward 1.
+    sky_emissivity = 0.75
+    ir_down = sky_emissivity * STEFAN_BOLTZMANN * ta_k**4
+    ir_up = STEFAN_BOLTZMANN * ta_k**4  # ground assumed at air temperature
+
+    # Absorbed solar: quarter factor from sphere cross-section / surface area,
+    # plus the ground-reflected component.
+    absorbed_solar = 0.25 * (1 - 0.05) * solar_total * (1 + GROUND_ALBEDO)
+
+    # Iterate: energy in = energy out. Tg appears as Tg^4 and linearly,
+    # so there is no closed form.
+    tg_k = ta_k
+    for _ in range(50):
+        emitted = GLOBE_EMISSIVITY * STEFAN_BOLTZMANN * tg_k**4
+        absorbed_ir = GLOBE_EMISSIVITY * 0.5 * (ir_down + ir_up)
+        convection = h * (ta_k - tg_k)
+
+        imbalance = absorbed_solar + absorbed_ir + convection - emitted
+
+        # Derivative of imbalance with respect to tg_k, for Newton's method.
+        derivative = -4 * GLOBE_EMISSIVITY * STEFAN_BOLTZMANN * tg_k**3 - h
+        step = imbalance / derivative
+
+        tg_k -= step
+        if abs(step) < 0.01:
+            break
+
+    return tg_k - 273.15
