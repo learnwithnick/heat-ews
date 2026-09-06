@@ -1,25 +1,49 @@
+from datetime import datetime
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from app.physics.heat_index import heat_index_c
+from app.physics.wbgt import wbgt_from_weather
 
-app = FastAPI(title="heat-engine", version="0.1.0")
+app = FastAPI()
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "heat-engine"}
+    return {"status": "ok"}
 
 
-class HeatIndexRequest(BaseModel):
-    temp_c: float
+class WeatherPoint(BaseModel):
+    t2m: float
     rh: float
+    wind10m: float
+    dni: float
+    diffuse: float
+    pressure_hpa: float
+    lat_deg: float
+    lon_deg: float
+    when_utc: datetime
 
 
-class HeatIndexResponse(BaseModel):
-    heat_index_c: float
+class WbgtResult(BaseModel):
+    wbgt: float
 
 
-@app.post("/compute/heat-index", response_model=HeatIndexResponse)
-def compute_heat_index(req: HeatIndexRequest):
-    return HeatIndexResponse(heat_index_c=heat_index_c(req.temp_c, req.rh))
+@app.post("/compute/batch")
+def compute_batch(points: list[WeatherPoint]) -> list[WbgtResult]:
+    results = []
+    for p in points:
+        value = wbgt_from_weather(
+            p.t2m,
+            p.rh,
+            p.wind10m,
+            p.dni,
+            p.diffuse,
+            p.pressure_hpa,
+            p.lat_deg,
+            p.lon_deg,
+            p.when_utc,
+        )
+        results.append(WbgtResult(wbgt=value))
+    return results
+
